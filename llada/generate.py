@@ -119,14 +119,106 @@ def generate(model, prompt, steps=128, gen_length=128, block_length=128, tempera
             if factor is None:
                 x0, transfer_index = get_transfer_index(logits, temperature, remasking, mask_index, x, num_transfer_tokens[:, i] if threshold is None else None, threshold)
             else:
-                x0, transfer_index = get_transfer_index_dynamic(logits, temperature, remasking, mask_index, x, None, factor)
+                x0, transfer_index, _ = get_transfer_index_dynamic(logits, temperature, remasking, mask_index, x, None, factor)
             x[transfer_index] = x0[transfer_index]
             i += 1
             if (x[:, prompt.shape[1] + num_block * block_length: prompt.shape[1] + (num_block + 1) * block_length] == mask_id).sum() == 0:
                 break
     return x, nfe
 
+@ torch.no_grad()
+def generate_s(model, prompt, steps=128, gen_length=128, block_length=128, temperature=0.,
+             remasking='low_confidence', mask_id=126336, threshold=None, factor=None):
+    '''
+    Args:
+        model: Mask predictor.
+        prompt: A tensor of shape (1, L).
+        steps: Sampling steps, less than or equal to gen_length.
+        gen_length: Generated answer length.
+        block_length: Block length, less than or equal to gen_length. If less than gen_length, it means using semi_autoregressive remasking.
+        temperature: Categorical distribution sampling temperature.
+        cfg_scale: Unsupervised classifier-free guidance scale.
+        remasking: Remasking strategy. 'low_confidence' or 'random'.
+        mask_id: The toke id of [MASK] is 126336.
+    '''
+    x = torch.full((prompt.shape[0], prompt.shape[1] + gen_length), mask_id, dtype=torch.long).to(model.device)
+    x[:, :prompt.shape[1]] = prompt.clone()
 
+    nfe = 0
+    block_ptr = torch.full((x.shape[0], 1), prompt.shape[1], dtype=torch.long, device=x.device)
+    low_conf_mask = torch.zeros_like(x, dtype=torch.bool)
+    num_transfer_tokens = get_num_transfer_tokens(x == mask_id, steps).to(torch.long)  # (B, steps)
+    i = 0
+    while True:
+        nfe += 1
+        mask_index = (x == mask_id)
+        logits = model(x).logits
+        mask_index[:, block_ptr + block_length:] = 0 # not consider low conf tokens yet
+        if factor is None:
+            x0, transfer_index = get_transfer_index(logits, temperature, remasking, mask_index, x, num_transfer_tokens[:, i] if threshold is None else None, threshold)
+        else:
+            x0, transfer_index, conf = get_transfer_index_dynamic(logits, temperature, remasking, mask_index, x, None, factor)
+        x[transfer_index] = x0[transfer_index]
+        i += 1
+        
+        if block_ptr.min().item() < x.shape[1] - block_length:
+            block_mask_index = x[:, block_ptr: block_ptr + block_length] == mask_id
+            # skip low confidence tokens
+            low_conf_mask = conf[:, block_ptr: block_ptr + block_length] > 0
+            block_mask_index = block_mask_index & low_conf_mask if block_mask_index.sum(dim=-1, keepdim=True) <= 8 else block_mask_index
+            whole_block = block_mask_index.sum(dim=-1, keepdim=True) == 0 # (B, 1) bool
+            block_ptr = torch.clamp(block_ptr + block_mask_index.long().argmax(dim=-1, keepdim=True) + whole_block.long() * block_length, max=x.shape[1] - block_length)
+
+        if (x[:, prompt.shape[1]:] == mask_id).sum() == 0:
+            break
+    
+    print(f'nfe: {nfe}')
+    return x, nfe
+
+@ torch.no_grad()
+def generate_i(model, prompt, steps=128, gen_length=128, block_length=128, temperature=0.,
+             remasking='low_confidence', mask_id=126336, threshold=None, factor=None):
+    '''
+    Args:
+        model: Mask predictor.
+        prompt: A tensor of shape (1, L).
+        steps: Sampling steps, less than or equal to gen_length.
+        gen_length: Generated answer length.
+        block_length: Block length, less than or equal to gen_length. If less than gen_length, it means using semi_autoregressive remasking.
+        temperature: Categorical distribution sampling temperature.
+        cfg_scale: Unsupervised classifier-free guidance scale.
+        remasking: Remasking strategy. 'low_confidence' or 'random'.
+        mask_id: The toke id of [MASK] is 126336.
+    '''
+    x = torch.full((prompt.shape[0], prompt.shape[1] + gen_length), mask_id, dtype=torch.long).to(model.device)
+    x[:, :prompt.shape[1]] = prompt.clone()
+
+    nfe = 0
+    block_end_ptr = torch.full((x.shape[0], 1), prompt.shape[1] + block_length, dtype=torch.long, device=x.device)
+    num_transfer_tokens = get_num_transfer_tokens(x == mask_id, steps).to(torch.long)  # (B, steps)
+    # print(f'num_transfer_tokens: {num_transfer_tokens}')
+    i = 0
+    while True:
+        nfe += 1
+        mask_index = (x == mask_id)
+        logits = model(x).logits
+        mask_index[:, block_end_ptr:] = 0 # not consider low conf tokens yet
+        if factor is None:
+            x0, transfer_index = get_transfer_index(logits, temperature, remasking, mask_index, x, num_transfer_tokens[:, i] if threshold is None else None, threshold)
+        else:
+            x0, transfer_index, _ = get_transfer_index_dynamic(logits, temperature, remasking, mask_index, x, None, factor)
+        x[transfer_index] = x0[transfer_index]
+        i += 1
+
+        if block_end_ptr.min().item() < x.shape[1]:
+            extend_len = transfer_index.sum(dim=-1, keepdim=True)
+            block_end_ptr = torch.clamp(block_end_ptr + extend_len, max=x.shape[1])
+
+        if (x[:, prompt.shape[1]:] == mask_id).sum() == 0:
+            break
+    
+    print(f'nfe: {nfe}')
+    return x, nfe
 
 @ torch.no_grad()
 def generate_with_prefix_cache(model, prompt, steps=128, gen_length=128, block_length=128, temperature=0.,
@@ -417,7 +509,7 @@ def get_transfer_index_dynamic(logits, temperature, remasking, mask_index, x, nu
         _, select_index = torch.topk(confidence[j], k=top_i)
         transfer_index[j, select_index] = True
 
-    return x0, transfer_index
+    return x0, transfer_index, x0_p
 
 def main():
     device = 'cuda'
