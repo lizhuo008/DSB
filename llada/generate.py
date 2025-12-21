@@ -297,7 +297,8 @@ def generate_i_cache(model, prompt, steps=128, gen_length=128, block_length=128,
             if blk_acc >= block_length or num_unmask == gen_length:
                 # print(f'blk_acc: {blk_acc}, num_unmask: {num_unmask}, tbl: {tbl}')
                 if num_unmask != gen_length:
-                    cur_idx = (~cur_transfer_index).nonzero(as_tuple=False)
+                    cur_mask_blk = (x[:, block_start_ptr: block_end_ptr] == mask_id)
+                    cur_idx = (cur_mask_blk).nonzero(as_tuple=False)
                     if cur_idx.shape[0] > 0:
                         cur_idx = cur_idx[:, 1].view(B, -1)[:, 0]
                         block_start_ptr = block_start_ptr + cur_idx
@@ -312,7 +313,7 @@ def generate_i_cache(model, prompt, steps=128, gen_length=128, block_length=128,
             logits_blk = out_blk.logits
             past_key_values = out_blk.past_key_values
             mask_blk = (input_x == mask_id)
-            # print(f'mask_blk: {mask_blk}, input_x: {input_x}')
+            # print(f'mask_blk.shape: {mask_blk.shape}')
             if tbl > 0:
                 mask_blk[:, -tbl:] = 0
 
@@ -347,14 +348,15 @@ def generate_i_cache(model, prompt, steps=128, gen_length=128, block_length=128,
             #     else:
             #         block_mask = block_mask & ~prev_transfer_index
 
-            if prev_transfer_index is not None:
-                prev_idx = (~prev_transfer_index).nonzero(as_tuple=False)
-                # print(f'prev_idx: {prev_idx}, num_acc: {num_acc.item()}, mask_blk.sum: {mask_blk.sum()}')
-                if prev_idx.shape[0] > 0:
-                    prev_idx = prev_idx[:, 1].view(B, -1)[:, 0]
-                    block_start_ptr = block_start_ptr + prev_idx
-                else:
-                    block_start_ptr = block_start_ptr + prev_transfer_index.shape[1]
+            
+            prev_idx = (mask_blk).nonzero(as_tuple=False)
+            # print(f'prev_idx: {prev_idx.shape}, num_acc: {num_acc.item()}, mask_blk: {mask_blk}')
+            if prev_idx.shape[0] > 0:
+                prev_idx = prev_idx[:, 1].view(B, -1)[:, 0]
+                block_start_ptr = block_start_ptr + prev_idx
+                # print(f'block_start_ptr: {block_start_ptr}, prev_idx: {prev_idx}')
+            else:
+                block_start_ptr = block_start_ptr + prev_transfer_index.shape[1]
             
 
             new_block_end_ptr = torch.clamp(block_end_ptr + num_acc, max=x.shape[1])
