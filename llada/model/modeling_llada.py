@@ -90,7 +90,7 @@ __all__ = [
 
 log = logging.getLogger(__name__)
 
-@torch.compile()
+# @torch.compile()
 def scaled_dot_product_attention(q, k, v, mask=None, attn_mask=None, dropout_p=0.0, is_causal=False):
     return F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=dropout_p, is_causal=is_causal)
 

@@ -32,7 +32,7 @@ factor=1
 # --output_path evals_results/factor/gsm8k-ns0-${length}
 
 # dual cache + parallel factor
-# CUDA_VISIBLE_DEVICES=0 accelerate launch eval_llada.py --tasks ${task} --num_fewshot ${num_fewshot} --limit ${limit} \
+# CUDA_VISIBLE_DEVICES=1 accelerate launch eval_llada.py --tasks ${task} --num_fewshot ${num_fewshot} \
 # --confirm_run_unsafe_code --model llada_dist \
 # --model_args model_path=${model_path},gen_length=${length},steps=${length},block_length=${block_length},use_cache=True,dual_cache=True,factor=${factor},show_speed=True \
 # --output_path evals_results/dual_cache_parallel/gsm8k-ns0-${length}
@@ -56,6 +56,11 @@ CUDA_VISIBLE_DEVICES=1 accelerate launch eval_llada.py --tasks ${task} --num_few
 --model_args model_path=${model_path},gen_length=${length},steps=${length},block_length=${block_length},show_speed=True,use_cache=True,ib=True,factor=${factor} \
 --output_path evals_results/ib_cache/gsm8k-ns0-${length}
 
+# sb_cache
+# CUDA_VISIBLE_DEVICES=1 accelerate launch eval_llada.py --tasks ${task} --num_fewshot ${num_fewshot} --limit 100 \
+# --confirm_run_unsafe_code --model llada_dist \
+# --model_args model_path=${model_path},gen_length=${length},steps=${length},block_length=${block_length},show_speed=True,use_cache=True,sb=True,factor=${factor} \
+# --output_path evals_results/sb_cache/gsm8k-ns0-${length}
 ############################################### minerva_math evaluations ###############################################
 # task=minerva_math
 # length=256
