@@ -57,7 +57,7 @@ CUDA_VISIBLE_DEVICES=1 accelerate launch eval_llada.py --tasks ${task} --num_few
 --output_path evals_results/ib_cache/gsm8k-ns0-${length}
 
 # sb_cache
-# CUDA_VISIBLE_DEVICES=1 accelerate launch eval_llada.py --tasks ${task} --num_fewshot ${num_fewshot} --limit 100 \
+# CUDA_VISIBLE_DEVICES=1 accelerate launch eval_llada.py --tasks ${task} --num_fewshot ${num_fewshot} \
 # --confirm_run_unsafe_code --model llada_dist \
 # --model_args model_path=${model_path},gen_length=${length},steps=${length},block_length=${block_length},show_speed=True,use_cache=True,sb=True,factor=${factor} \
 # --output_path evals_results/sb_cache/gsm8k-ns0-${length}

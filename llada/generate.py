@@ -25,7 +25,7 @@ from model.modeling_llada import LLaDAModelLM
 from torch.cuda import nvtx
 from profiler.profiler import prof
 
-# @torch.compile()
+@torch.compile()
 def get_first_mask_idx(mask_blk: torch.Tensor) -> torch.Tensor:
     has_mask = mask_blk.any(dim=1)
     first_mask_idx = mask_blk.to(torch.long).argmax(dim=1)
@@ -299,7 +299,7 @@ def generate_s_cache(model, prompt, steps=128, gen_length=128, block_length=128,
         
         twl = max(min(gen_length - num_unmask - block_length, twl), 0)
         # print(f'first step: num_unmask: {num_unmask}, blk_acc: {blk_acc}, tbl: {tbl}')
-        assert num_acc.item() > 0, f'num_acc: {num_acc.item()}, cur_transfer_index.sum: {cur_transfer_index.sum().item()}'
+        # assert num_acc.item() > 0, f'num_acc: {num_acc.item()}, cur_transfer_index.sum: {cur_transfer_index.sum().item()}'
 
         while True:
             
@@ -344,7 +344,7 @@ def generate_s_cache(model, prompt, steps=128, gen_length=128, block_length=128,
             num_unmask += num_acc.item()
             twl = max(min(gen_length - num_unmask - block_length, twl), 0)
             # print(f'second step: num_unmask: {num_unmask}, blk_acc: {blk_acc}, tbl: {tbl}')
-            assert num_acc.item() > 0, f'num_acc: {num_acc.item()}, mask_blk: {mask_blk}, remain: {(x == mask_id).sum().item()}, remain_idx: {(x == mask_id).nonzero(as_tuple=False)}'
+            # assert num_acc.item() > 0, f'num_acc: {num_acc.item()}, mask_blk: {mask_blk}, remain: {(x == mask_id).sum().item()}, remain_idx: {(x == mask_id).nonzero(as_tuple=False)}'
 
             nfe += 1
 
@@ -378,6 +378,149 @@ def generate_s_cache(model, prompt, steps=128, gen_length=128, block_length=128,
 
     print(f'nfe: {nfe}')
     return x, nfe
+
+# @ torch.no_grad()
+# def generate_i_cache(model, prompt, steps=128, gen_length=128, block_length=128, temperature=0.,
+#              remasking='low_confidence', mask_id=126336, threshold=None, factor=None, prefix_window=8, suffix_window=0):
+#     '''
+#     Args:
+#         model: Mask predictor.
+#         prompt: A tensor of shape (1, L).
+#         steps: Sampling steps, less than or equal to gen_length.
+#         gen_length: Generated answer length.
+#         block_length: Block length, less than or equal to gen_length. If less than gen_length, it means using semi_autoregressive remasking.
+#         temperature: Categorical distribution sampling temperature.
+#         cfg_scale: Unsupervised classifier-free guidance scale.
+#         remasking: Remasking strategy. 'low_confidence' or 'random'.
+#         mask_id: The toke id of [MASK] is 126336.
+#     '''
+#     twl = suffix_window if suffix_window > 0 else 0
+#     pwl = prefix_window
+
+#     x = torch.full((prompt.shape[0], prompt.shape[1] + gen_length), mask_id, dtype=torch.long).to(model.device)
+#     x[:, :prompt.shape[1]] = prompt.clone()
+
+#     B, L = x.shape
+
+#     nfe = 0
+#     # block_mask could act like the replace_position in the dual_cache
+#     # block_mask = torch.zeros_like(x, dtype=torch.bool)
+#     # block_mask[:, prompt.shape[1]: prompt.shape[1] + block_length + tbl] = True
+#     last_block_start_ptr = None
+#     block_start_ptr = torch.full((x.shape[0], 1), prompt.shape[1], dtype=torch.long, device=x.device)
+#     block_end_ptr = torch.full((x.shape[0], 1), prompt.shape[1] + block_length, dtype=torch.long, device=x.device)
+#     num_transfer_tokens = get_num_transfer_tokens(x == mask_id, steps).to(torch.long)  # (B, steps)
+#     # print(f'num_transfer_tokens: {num_transfer_tokens}')
+#     i = 0
+#     num_unmask = 0
+#     replace_position = torch.zeros_like(x, dtype=torch.bool)
+#     # print(f'L: {L}, gen_length: {gen_length}')
+#     while num_unmask < gen_length:
+#         # with prof.time_context("out loop"):
+#         blk_acc = 0
+#         cur_idx = 0
+#         cur_transfer_index = None
+#         last_block_start_ptr = block_start_ptr.clone()
+#         # no s, e here, but a block_mask indicating the block to generate
+#         # a function like get_num_transfer_tokens need
+#         # with prof.time_context("out model_forward"):
+#         out_full = model(x, use_cache=True)
+#         past_key_values = out_full.past_key_values
+#         nfe += 1
+
+#         global_mask_index = (x == mask_id)
+#         global_mask_index[:, block_end_ptr:] = 0
+
+#         # with prof.time_context("out get_transfer_index"):
+#         if factor is None:
+#             quota0 = None if threshold is not None else num_transfer_tokens[:, 0]  # (B,)
+#             x0, cur_transfer_index, _ = get_transfer_index(
+#                 out_full.logits, temperature, remasking, global_mask_index, x, quota0, threshold
+#             )
+#         else:
+#             x0, cur_transfer_index, _ = get_transfer_index_dynamic(
+#                 out_full.logits, temperature, remasking, global_mask_index, x, None, factor
+#             )    
+        
+#         num_acc = cur_transfer_index.sum(dim=-1, keepdim=True)
+#         x = torch.where(cur_transfer_index, x0, x)
+
+#         # new_block_end_ptr = torch.clamp(block_end_ptr + num_acc, max=x.shape[1])
+#         # block_end_ptr = new_block_end_ptr
+
+#         blk_acc += num_acc.item()
+#         num_unmask += num_acc.item()
+        
+#         twl = max(min(gen_length - num_unmask - block_length, twl), 0)
+#         # print(f'first step: num_unmask: {num_unmask}, blk_acc: {blk_acc}, tbl: {tbl}')
+#         # assert num_acc.item() > 0, f'num_acc: {num_acc.item()}, cur_transfer_index.sum: {cur_transfer_index.sum().item()}'
+
+#         while True:
+#             # cur_mask_blk = (x[:, block_start_ptr: block_end_ptr] == mask_id)
+#             # cur_idx = (cur_mask_blk).nonzero(as_tuple=False)
+#             # cur_idx = cur_idx[:, 1].view(B, -1)[:, 0] if cur_idx.shape[0] > 0 else cur_mask_blk.shape[1]
+#             # with prof.time_context("update_block_ptr"):
+#             block_end_ptr = torch.clamp(block_end_ptr + num_acc, max=x.shape[1])
+
+#             cur_mask_blk = (x[:, block_start_ptr: block_end_ptr] == mask_id)
+#             cur_idx = get_first_mask_idx(cur_mask_blk)
+#             block_start_ptr = block_start_ptr + cur_idx
+                
+#             if blk_acc >= block_length or num_unmask == gen_length:
+#                 break
+
+#             # with prof.time_context("update_replace_position"):
+#             # prefix_window = min(max(cur_idx, pwl), block_start_ptr - last_block_start_ptr)
+#             prefix_window = cur_idx if nfe % 4 != 0 else block_start_ptr - last_block_start_ptr
+#             # prefix_window = cur_idx + pwl
+
+#             input_x = x[:, block_start_ptr - prefix_window: block_end_ptr + twl]
+#             # new_replace_position = torch.zeros_like(x, dtype=torch.bool)
+#             # new_replace_position[:, block_start_ptr - prefix_window: block_end_ptr + twl] = True
+#             # replace_position = new_replace_position
+#             replace_position.zero_()
+#             replace_position[:, block_start_ptr - prefix_window: block_end_ptr + twl] = True
+
+#             # with prof.time_context("model_forward"):
+#             out_blk = model(input_x, past_key_values=past_key_values, use_cache=True, replace_position=replace_position)
+#             nfe += 1
+#             logits_blk = out_blk.logits
+#             past_key_values = out_blk.past_key_values
+#             mask_blk = (input_x == mask_id)
+#             # print(f'mask_blk.shape: {mask_blk.shape}')
+#             if twl > 0:
+#                 mask_blk[:, block_end_ptr:] = 0
+
+#             # with prof.time_context("get_transfer_index"):
+#             if factor is None:
+#                 quota_i = None if threshold is not None else num_transfer_tokens[:, i]  # (B,)
+#                 x0_blk, cur_transfer_index, _ = get_transfer_index(
+#                     logits_blk, temperature, remasking, mask_blk, input_x, quota_i, threshold
+#                 )
+#             else:
+#                 x0_blk, cur_transfer_index, _ = get_transfer_index_dynamic(
+#                     logits_blk, temperature, remasking, mask_blk, input_x, None, factor
+#                 )
+#             # with prof.time_context("others"):
+#             num_acc = cur_transfer_index.sum(dim=-1, keepdim=True)
+            
+#             blk_old = input_x
+#             blk_new = torch.where(cur_transfer_index, x0_blk, blk_old)
+#             x = torch.cat([x[:, :block_start_ptr - prefix_window], blk_new, x[:, block_end_ptr + twl:]], dim=1)
+
+#             blk_acc += num_acc.item()
+#             num_unmask += num_acc.item()
+#             twl = max(min(gen_length - num_unmask - block_length, twl), 0)
+#             # print(f'second step: num_unmask: {num_unmask}, blk_acc: {blk_acc}, tbl: {tbl}')
+#             # assert num_acc.item() > 0, f'num_acc: {num_acc.item()}, remain: {(x == mask_id).sum().item()}, remain_idx: {(x == mask_id).nonzero(as_tuple=False)}'
+
+                
+
+#             # new_block_end_ptr = torch.clamp(block_end_ptr + num_acc, max=x.shape[1])
+#             # block_end_ptr = new_block_end_ptr
+
+#     print(f'nfe: {nfe}')
+#     return x, nfe
 
 @ torch.no_grad()
 def generate_i_cache(model, prompt, steps=128, gen_length=128, block_length=128, temperature=0.,
@@ -450,7 +593,7 @@ def generate_i_cache(model, prompt, steps=128, gen_length=128, block_length=128,
         blk_acc += num_acc.item()
         num_unmask += num_acc.item()
         
-        # twl = max(min(gen_length - num_unmask - block_length, twl), 0)
+        twl = max(min(gen_length - num_unmask - block_length, twl), 0)
         # print(f'first step: num_unmask: {num_unmask}, blk_acc: {blk_acc}, tbl: {tbl}')
         # assert num_acc.item() > 0, f'num_acc: {num_acc.item()}, cur_transfer_index.sum: {cur_transfer_index.sum().item()}'
 
@@ -508,7 +651,7 @@ def generate_i_cache(model, prompt, steps=128, gen_length=128, block_length=128,
 
             blk_acc += num_acc.item()
             num_unmask += num_acc.item()
-            # twl = max(min(gen_length - num_unmask - block_length, twl), 0)
+            twl = max(min(gen_length - num_unmask - block_length, twl), 0)
             # print(f'second step: num_unmask: {num_unmask}, blk_acc: {blk_acc}, tbl: {tbl}')
             # assert num_acc.item() > 0, f'num_acc: {num_acc.item()}, remain: {(x == mask_id).sum().item()}, remain_idx: {(x == mask_id).nonzero(as_tuple=False)}'
 
@@ -673,6 +816,7 @@ def generate_i_cache(model, prompt, steps=128, gen_length=128, block_length=128,
 #     return x, nfe
 
 # @ torch.no_grad()
+# # discrete block
 # def generate_i_cache(model, prompt, steps=128, gen_length=128, block_length=128, temperature=0.,
 #              remasking='low_confidence', mask_id=126336, threshold=None, factor=None, tail_block_length=0):
 #     '''
@@ -728,7 +872,7 @@ def generate_i_cache(model, prompt, steps=128, gen_length=128, block_length=128,
 #             )
 #         else:
 #             x0, cur_transfer_index, _ = get_transfer_index_dynamic(
-#                 out_full.logits, temperature, remasking, global_mask_index, x, None, factor
+#                 out_full.logits, temperature, remasking, global_mask_index, x, None, factor, max_transfer_tokens=block_length-blk_acc
 #             )    
         
 #         num_acc = cur_transfer_index.sum(dim=-1, keepdim=True)
@@ -752,6 +896,153 @@ def generate_i_cache(model, prompt, steps=128, gen_length=128, block_length=128,
 #             rows = torch.arange(B, device=x.device)[:, None]
 #             input_x = x[rows, cur_idx]
 #             out_blk = model(input_x, past_key_values=past_key_values, use_cache=True, replace_position=block_mask)
+#             logits_blk = out_blk.logits
+#             past_key_values = out_blk.past_key_values
+#             mask_blk = (input_x == mask_id)
+#             if tbl > 0:
+#                 mask_blk[:, -tbl:] = 0
+
+#             if factor is None:
+#                 quota_i = None if threshold is not None else num_transfer_tokens[:, i]  # (B,)
+#                 x0_blk, cur_transfer_index, _ = get_transfer_index(
+#                     logits_blk, temperature, remasking, mask_blk, input_x, quota_i, threshold
+#                 )
+#             else:
+#                 x0_blk, cur_transfer_index, _ = get_transfer_index_dynamic(
+#                     logits_blk, temperature, remasking, mask_blk, input_x, None, factor, max_transfer_tokens=block_length-blk_acc
+#                 )
+
+#             num_acc = cur_transfer_index.sum(dim=-1, keepdim=True)
+#             blk_old = input_x
+#             blk_new = torch.where(cur_transfer_index, x0_blk, blk_old)
+#             x[rows, cur_idx] = blk_new
+
+#             blk_acc += num_acc.item()
+#             num_unmask += num_acc.item()
+#             tbl = max(min(gen_length - num_unmask - block_length, tbl), 0)
+
+#             nfe += 1
+
+#             # if not num_unmask >= gen_length-block_length:
+#             #     print(f'num_unmask: {num_unmask}, block_mask.sum: {block_mask.sum()}')
+#             #     if prev_idx is not None:
+#             #         block_mask[rows, prev_idx] = block_mask[rows, prev_idx] & ~prev_transfer_index
+#             #     else:
+#             #         block_mask = block_mask & ~prev_transfer_index
+
+#             if prev_transfer_index is not None:
+#                 block_mask[rows, prev_idx] = block_mask[rows, prev_idx] & ~prev_transfer_index
+            
+
+#             new_block_end_ptr = torch.clamp(block_end_ptr + num_acc, max=x.shape[1])
+#             block_mask[:, block_end_ptr: new_block_end_ptr] = True
+#             block_end_ptr = new_block_end_ptr
+
+#             # assert block_mask.sum() - num_acc.item() == block_length + tbl, f'block_mask.sum: {block_mask.sum()}, num_acc: {num_acc.item()}'
+#             # print(f'blk_acc: {blk_acc}, block_mask.sum: {block_mask.sum()}, num_acc: {num_acc.item()}')
+
+#             if blk_acc >= block_length or num_unmask == gen_length:
+#                 # print(f'blk_acc: {blk_acc}, num_unmask: {num_unmask}, tbl: {tbl}')
+#                 block_mask[rows, cur_idx] = block_mask[rows, cur_idx] & ~cur_transfer_index
+#                 break
+
+#     print(f'nfe: {nfe}')
+#     return x, nfe
+
+# @ torch.no_grad()
+# # discrete block
+# def generate_i_cache(model, prompt, steps=128, gen_length=128, block_length=128, temperature=0.,
+#              remasking='low_confidence', mask_id=126336, threshold=None, factor=None, tail_block_length=0):
+#     '''
+#     Args:
+#         model: Mask predictor.
+#         prompt: A tensor of shape (1, L).
+#         steps: Sampling steps, less than or equal to gen_length.
+#         gen_length: Generated answer length.
+#         block_length: Block length, less than or equal to gen_length. If less than gen_length, it means using semi_autoregressive remasking.
+#         temperature: Categorical distribution sampling temperature.
+#         cfg_scale: Unsupervised classifier-free guidance scale.
+#         remasking: Remasking strategy. 'low_confidence' or 'random'.
+#         mask_id: The toke id of [MASK] is 126336.
+#     '''
+#     tbl = tail_block_length if tail_block_length > 0 else 0
+
+#     x = torch.full((prompt.shape[0], prompt.shape[1] + gen_length), mask_id, dtype=torch.long).to(model.device)
+#     x[:, :prompt.shape[1]] = prompt.clone()
+
+#     B, L = x.shape
+
+#     nfe = 0
+#     # block_mask could act like the replace_position in the dual_cache
+#     block_mask = torch.zeros_like(x, dtype=torch.bool)
+#     block_mask[:, prompt.shape[1]: prompt.shape[1] + block_length + tbl] = True
+
+
+#     last_block_start_ptr = None
+#     block_end_ptr = torch.full((x.shape[0], 1), prompt.shape[1] + block_length + tbl, dtype=torch.long, device=x.device)
+#     num_transfer_tokens = get_num_transfer_tokens(x == mask_id, steps).to(torch.long)  # (B, steps)
+#     # cur_idx = torch.arange(prompt.shape[1], prompt.shape[1] + block_length + tbl, device=x.device)
+#     # print(f'num_transfer_tokens: {num_transfer_tokens}')
+#     i = 0
+#     num_unmask = 0
+#     rows = torch.arange(B, device=x.device)[:, None]
+#     # print(f'L: {L}, gen_length: {gen_length}')
+#     while num_unmask < gen_length:
+#         blk_acc = 0
+#         cur_idx = torch.arange(0, L, device=x.device)
+#         cur_transfer_index = None
+#         last_block_start_ptr = get_first_mask_idx(block_mask)
+#         # no s, e here, but a block_mask indicating the block to generate
+#         # a function like get_num_transfer_tokens need
+#         out_full = model(x, use_cache=True)
+#         past_key_values = out_full.past_key_values
+#         nfe += 1
+
+#         # global_mask_index = (x == mask_id)
+#         # global_mask_index[:, block_end_ptr - tbl:] = 0
+
+#         if factor is None:
+#             quota0 = None if threshold is not None else num_transfer_tokens[:, 0]  # (B,)
+#             x0, cur_transfer_index, _ = get_transfer_index(
+#                 out_full.logits, temperature, remasking, block_mask, x, quota0, threshold
+#             )
+#         else:
+#             x0, cur_transfer_index, _ = get_transfer_index_dynamic(
+#                 out_full.logits, temperature, remasking, block_mask, x, None, factor
+#             )    
+        
+#         num_acc = cur_transfer_index.sum(dim=-1, keepdim=True)
+#         x = torch.where(cur_transfer_index, x0, x)
+
+#         blk_acc += num_acc.item()
+#         num_unmask += num_acc.item()
+#         tbl = max(min(gen_length - num_unmask - block_length, tbl), 0)
+
+#         while True:
+#             new_block_end_ptr = torch.clamp(block_end_ptr + num_acc, max=x.shape[1])
+#             block_mask[:, block_end_ptr: new_block_end_ptr] = True
+#             block_end_ptr = new_block_end_ptr
+
+#             if blk_acc >= block_length or num_unmask == gen_length:
+#                 # print(f'blk_acc: {blk_acc}, num_unmask: {num_unmask}, tbl: {tbl}')
+#                 block_mask[rows, cur_idx] = block_mask[rows, cur_idx] & ~cur_transfer_index
+#                 break
+
+#             prev_transfer_index = cur_transfer_index
+#             prev_idx = cur_idx
+            
+#             if nfe % 2 != 0:
+#                 cur_idx = torch.nonzero(block_mask, as_tuple=False)
+#                 cur_idx = cur_idx[:, 1].view(B, -1)
+#                 replace_position = block_mask
+#             else:
+#                 # print(f'last_block_start_ptr: {last_block_start_ptr}, block_end_ptr: {block_end_ptr},unmask_num: {num_unmask}')
+#                 cur_idx = torch.arange(last_block_start_ptr.item(), block_end_ptr.item(), device=x.device)
+#                 replace_position = torch.zeros_like(x, dtype=torch.bool)
+#                 replace_position[:, last_block_start_ptr.item(): block_end_ptr.item()] = True
+
+#             input_x = x[rows, cur_idx]
+#             out_blk = model(input_x, past_key_values=past_key_values, use_cache=True, replace_position=replace_position)
 #             logits_blk = out_blk.logits
 #             past_key_values = out_blk.past_key_values
 #             mask_blk = (input_x == mask_id)
@@ -790,20 +1081,16 @@ def generate_i_cache(model, prompt, steps=128, gen_length=128, block_length=128,
 #                 block_mask[rows, prev_idx] = block_mask[rows, prev_idx] & ~prev_transfer_index
             
 
-#             new_block_end_ptr = torch.clamp(block_end_ptr + num_acc, max=x.shape[1])
-#             block_mask[:, block_end_ptr: new_block_end_ptr] = True
-#             block_end_ptr = new_block_end_ptr
+            
 
 #             # assert block_mask.sum() - num_acc.item() == block_length + tbl, f'block_mask.sum: {block_mask.sum()}, num_acc: {num_acc.item()}'
 #             # print(f'blk_acc: {blk_acc}, block_mask.sum: {block_mask.sum()}, num_acc: {num_acc.item()}')
 
-#             if blk_acc >= 0 or num_unmask == gen_length:
-#                 print(f'blk_acc: {blk_acc}, num_unmask: {num_unmask}, tbl: {tbl}')
-#                 block_mask[rows, cur_idx] = block_mask[rows, cur_idx] & ~cur_transfer_index
-#                 break
+            
 
 #     print(f'nfe: {nfe}')
 #     return x, nfe
+
 
 @ torch.no_grad()
 def generate_with_prefix_cache(model, prompt, steps=128, gen_length=128, block_length=128, temperature=0.,
