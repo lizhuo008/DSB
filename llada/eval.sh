@@ -85,7 +85,7 @@ length=256
 block_length=32
 num_fewshot=0
 steps=$((length / block_length))
-model_path='/workplace/models/LLaDA-8B-Instruct'
+model_path='/workplace/models/LLaDA/LLaDA-8B-Instruct'
 
 # baseline
 # CUDA_VISIBLE_DEVICES=0 accelerate launch eval_llada.py --tasks ${task} --num_fewshot ${num_fewshot} \
@@ -123,7 +123,7 @@ length=256
 block_length=32
 num_fewshot=3
 steps=256
-model_path='/workplace/models/LLaDA-8B-Instruct'
+model_path='/workplace/models/LLaDA/LLaDA-8B-Instruct'
 
 # baseline
 # CUDA_VISIBLE_DEVICES=0 accelerate launch eval_llada.py --tasks ${task} --num_fewshot ${num_fewshot} \

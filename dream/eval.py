@@ -78,6 +78,10 @@ class Dream(LM):
         use_cache: Optional[bool] = False,
         dual_cache: Optional[bool] = False,
         save_dir: Optional[str] = None,
+        block_length: Optional[int] = 32,
+        show_speed: Optional[bool] = False,
+        outp_path: Optional[str] = None,
+        dsb: Optional[bool] = False,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -211,6 +215,10 @@ class Dream(LM):
         self.dual_cache = dual_cache
         self.generated_token_num = 0
         self.save_dir = save_dir
+        self.block_length = block_length
+        self.show_speed = show_speed
+        self.outp_path = outp_path
+        self.dsb = dsb
     @property
     def batch_size(self):
         return self.batch_size_per_gpu
@@ -305,7 +313,7 @@ class Dream(LM):
         prompt_ids = prompt_ids.to(device=self.device)
         attn_mask = attn_mask.to(device=self.device)
 
-        generation_ids = self.model.diffusion_generate(
+        generation_ids, nfe = self.model.diffusion_generate(
             prompt_ids,
             attention_mask=attn_mask,
             max_new_tokens=self.max_new_tokens,
@@ -319,6 +327,8 @@ class Dream(LM):
             alg_temp=self.alg_temp,
             threshold=self.threshold,
             dual_cache=self.dual_cache,
+            block_length=self.block_length,
+            dsb=self.dsb,
         )
 
         # decode
@@ -332,7 +342,7 @@ class Dream(LM):
         print('question: ', prompts[0])
         print('answer: ', responses[0])
         print('=' * 20, end='\n\n')
-        return responses
+        return responses, nfe
 
     def generate_until(self, requests: List[Instance], disable_tqdm: bool = False):
         res = []
@@ -363,6 +373,7 @@ class Dream(LM):
             # disable=(disable_tqdm or (self.rank != 0)),
             desc="Running generate_until requests",
         )
+        total_nfe = 0
         start_time = time.time()
         for batch_idx in range(0, len(requests), self.batch_size):
             batch_requests = requests[batch_idx : batch_idx + self.batch_size]
@@ -372,7 +383,8 @@ class Dream(LM):
                 pbar.update(len(contexts))
                 continue
             
-            responses = self._generate_batch(contexts)
+            responses, nfe = self._generate_batch(contexts)
+            total_nfe += nfe
             if not self.escape_until:
                 for i, r in enumerate(responses):
                     for s in gen_args[0]['until']:
@@ -392,10 +404,30 @@ class Dream(LM):
                         f.write(json.dumps(r, ensure_ascii=False) + '\n')
 
         end_time = time.time()
-        print(f"Time taken: {end_time - start_time} seconds")
-        print(f"Generated token num: {self.generated_token_num}")
-        print(f"Generated token num per second: {self.generated_token_num / (end_time - start_time)}")
+        if self.show_speed:
+            print(f"Time taken: {end_time - start_time} seconds")
+            print(f"Generated token num: {self.generated_token_num}")
+            print(f"Generated token num per second: {self.generated_token_num / (end_time - start_time)}")
+            print(f"Total NFE: {total_nfe}")
+            print(f"Token per NFE: {self.generated_token_num / total_nfe}")
+            print(f"Average NFE: {total_nfe / len(res)}")
 
+            if self.outp_path is not None:
+                dirpath = os.path.dirname(self.outp_path)
+                if dirpath:
+                    os.makedirs(dirpath, exist_ok=True)
+                with open(self.outp_path, 'a', encoding='utf-8') as f:
+                    f.write(json.dumps(
+                        {
+                            'Total Number of Tokens': self.generated_token_num,
+                            'Total Time Taken': end_time - start_time,
+                            'Tokens per Second': self.generated_token_num / (end_time - start_time),
+                            'Total NFE': total_nfe,
+                            'Tokens per NFE': self.generated_token_num / total_nfe,
+                            'Average NFE': total_nfe / len(res),
+                        },
+                        ensure_ascii=False
+                    ) + "\n")
         return res
 
     def _forward_process(self, batch):
