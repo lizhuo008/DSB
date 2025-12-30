@@ -35,6 +35,22 @@ model="/workplace/models/Dream/Dream-v0-Instruct-7B"
 #     --batch_size 1 \
 #     --output_path evals_results/dsb_parallel/${task}-ns0-${length}
 
+# dual cache + parallel
+# CUDA_VISIBLE_DEVICES=0 accelerate launch eval.py --model dream \
+#     --model_args pretrained=${model},max_new_tokens=${length},diffusion_steps=${steps},block_length=${block_length},add_bos_token=true,alg=confidence_threshold,threshold=0.9,use_cache=true,dual_cache=true,show_speed=True,outp_path=evals_results/dual_cache_parallel/${task}-ns0-${length}/results.jsonl \
+#     --tasks ${task} \
+#     --num_fewshot ${num_fewshot} \
+#     --batch_size 1 \
+#     --output_path evals_results/dual_cache_parallel/${task}-ns0-${length}
+
+# dsb + cache + parallel
+# CUDA_VISIBLE_DEVICES=0 accelerate launch eval.py --model dream \
+#     --model_args pretrained=${model},max_new_tokens=${length},diffusion_steps=${steps},block_length=${block_length},add_bos_token=true,alg=confidence_threshold,threshold=0.9,dsb=true,use_cache=true,show_speed=True,outp_path=evals_results/dsb_cache_parallel/${task}-ns0-${length}/results.jsonl \
+#     --tasks ${task} \
+#     --num_fewshot ${num_fewshot} \
+#     --batch_size 1 \
+#     --output_path evals_results/dsb_cache_parallel/${task}-ns0-${length}
+
 ############################################### minerva_math evaluations ###############################################
 task=math
 length=256
@@ -67,6 +83,22 @@ model="/workplace/models/Dream/Dream-v0-Instruct-7B"
 #     --num_fewshot ${num_fewshot} \
 #     --batch_size 1 \
 #     --output_path evals_results/dsb_parallel/${task}-ns0-${length}
+
+# dual cache + parallel
+# CUDA_VISIBLE_DEVICES=0 accelerate launch eval.py --model dream \
+#     --model_args pretrained=${model},max_new_tokens=${length},diffusion_steps=${steps},block_length=${block_length},add_bos_token=true,alg=confidence_threshold,threshold=0.9,use_cache=true,dual_cache=true,show_speed=True,outp_path=evals_results/dual_cache_parallel/${task}-ns0-${length}/results.jsonl \
+#     --tasks ${task} \
+#     --num_fewshot ${num_fewshot} \
+#     --batch_size 1 \
+#     --output_path evals_results/dual_cache_parallel/${task}-ns0-${length}
+
+# dsb + cache + parallel
+# CUDA_VISIBLE_DEVICES=0 accelerate launch eval.py --model dream \
+#     --model_args pretrained=${model},max_new_tokens=${length},diffusion_steps=${steps},block_length=${block_length},add_bos_token=true,alg=confidence_threshold,threshold=0.9,dsb=true,use_cache=true,show_speed=True,outp_path=evals_results/dsb_cache_parallel/${task}-ns0-${length}/results.jsonl \
+#     --tasks ${task} \
+#     --num_fewshot ${num_fewshot} \
+#     --batch_size 1 \
+#     --output_path evals_results/dsb_cache_parallel/${task}-ns0-${length}
 
 ############################################### humaneval evaluations ###############################################
 task=humaneval
@@ -101,6 +133,22 @@ model="/workplace/models/Dream/Dream-v0-Instruct-7B"
 #     --batch_size 1 \
 #     --output_path evals_results/dsb_parallel/${task}-ns0-${length} --log_samples
 
+# dual cache + parallel
+# CUDA_VISIBLE_DEVICES=0 accelerate launch eval.py --model dream \
+#     --model_args pretrained=${model},max_new_tokens=${length},diffusion_steps=${steps},block_length=${block_length},add_bos_token=true,alg=confidence_threshold,threshold=0.9,use_cache=true,dual_cache=true,show_speed=True,outp_path=evals_results/dual_cache_parallel/${task}-ns0-${length}/results.jsonl \
+#     --tasks ${task} \
+#     --num_fewshot ${num_fewshot} \
+#     --batch_size 1 \
+#     --output_path evals_results/dual_cache_parallel/${task}-ns0-${length} --log_samples
+
+# dsb + cache + parallel
+# CUDA_VISIBLE_DEVICES=0 accelerate launch eval.py --model dream \
+#     --model_args pretrained=${model},max_new_tokens=${length},diffusion_steps=${steps},block_length=${block_length},add_bos_token=true,alg=confidence_threshold,threshold=0.9,dsb=true,use_cache=true,show_speed=True,outp_path=evals_results/dsb_cache_parallel/${task}-ns0-${length}/results.jsonl \
+#     --tasks ${task} \
+#     --num_fewshot ${num_fewshot} \
+#     --batch_size 1 \
+#     --output_path evals_results/dsb_cache_parallel/${task}-ns0-${length} --log_samples
+
 ############################################### mbpp evaluations ###############################################
 task=mbpp
 length=256
@@ -133,3 +181,19 @@ model="/workplace/models/Dream/Dream-v0-Instruct-7B"
 #     --num_fewshot ${num_fewshot} \
 #     --batch_size 1 \
 #     --output_path evals_results/dsb_parallel/${task}-ns0-${length} --log_samples
+
+# dual cache + parallel
+# CUDA_VISIBLE_DEVICES=0 accelerate launch eval.py --model dream \
+#     --model_args pretrained=${model},max_new_tokens=${length},diffusion_steps=${steps},block_length=${block_length},add_bos_token=true,alg=confidence_threshold,threshold=0.9,use_cache=true,dual_cache=true,show_speed=True,outp_path=evals_results/dual_cache_parallel/${task}-ns0-${length}/results.jsonl \
+#     --tasks ${task} \
+#     --num_fewshot ${num_fewshot} \
+#     --batch_size 1 \
+#     --output_path evals_results/dual_cache_parallel/${task}-ns0-${length} --log_samples
+
+# dsb + cache + parallel
+# CUDA_VISIBLE_DEVICES=0 accelerate launch eval.py --model dream \
+#     --model_args pretrained=${model},max_new_tokens=${length},diffusion_steps=${steps},block_length=${block_length},add_bos_token=true,alg=confidence_threshold,threshold=0.9,dsb=true,use_cache=true,show_speed=True,outp_path=evals_results/dsb_cache_parallel/${task}-ns0-${length}/results.jsonl \
+#     --tasks ${task} \
+#     --num_fewshot ${num_fewshot} \
+#     --batch_size 1 \
+#     --output_path evals_results/dsb_cache_parallel/${task}-ns0-${length} --log_samples

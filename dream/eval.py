@@ -82,6 +82,7 @@ class Dream(LM):
         show_speed: Optional[bool] = False,
         outp_path: Optional[str] = None,
         dsb: Optional[bool] = False,
+        prefix_window: Optional[int] = 8,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -219,6 +220,7 @@ class Dream(LM):
         self.show_speed = show_speed
         self.outp_path = outp_path
         self.dsb = dsb
+        self.prefix_window = prefix_window
     @property
     def batch_size(self):
         return self.batch_size_per_gpu
@@ -329,6 +331,8 @@ class Dream(LM):
             dual_cache=self.dual_cache,
             block_length=self.block_length,
             dsb=self.dsb,
+            use_cache=self.use_cache,
+            prefix_window=self.prefix_window,
         )
 
         # decode
@@ -346,14 +350,17 @@ class Dream(LM):
 
     def generate_until(self, requests: List[Instance], disable_tqdm: bool = False):
         res = []
-        if self.use_cache:
-            from model.generation_utils_block import DreamGenerationMixin
-            self.model.diffusion_generate = types.MethodType(DreamGenerationMixin.diffusion_generate, self.model)
-            self.model._sample = types.MethodType(DreamGenerationMixin._sample, self.model)
-        else:
-            from model.generation_utils import DreamGenerationMixin
-            self.model.diffusion_generate = types.MethodType(DreamGenerationMixin.diffusion_generate, self.model)
-            self.model._sample = types.MethodType(DreamGenerationMixin._sample, self.model)
+        # if self.use_cache:
+        #     from model.generation_utils_block import DreamGenerationMixin
+        #     self.model.diffusion_generate = types.MethodType(DreamGenerationMixin.diffusion_generate, self.model)
+        #     self.model._sample = types.MethodType(DreamGenerationMixin._sample, self.model)
+        # else:
+        #     from model.generation_utils import DreamGenerationMixin
+        #     self.model.diffusion_generate = types.MethodType(DreamGenerationMixin.diffusion_generate, self.model)
+        #     self.model._sample = types.MethodType(DreamGenerationMixin._sample, self.model)
+        from model.generation_utils import DreamGenerationMixin
+        self.model.diffusion_generate = types.MethodType(DreamGenerationMixin.diffusion_generate, self.model)
+        self.model._sample = types.MethodType(DreamGenerationMixin._sample, self.model)
 
         processed_count = 0
         if self.save_dir is not None:

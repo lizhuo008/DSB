@@ -418,7 +418,7 @@ def generate_i_cache(model, prompt, steps=128, gen_length=128, block_length=128,
         # with prof.time_context("out loop"):
         blk_acc = 0
         cur_idx = 0
-        cur_transfer_index = None
+        # cur_transfer_index = None
         # no s, e here, but a block_mask indicating the block to generate
         # a function like get_num_transfer_tokens need
         # with prof.time_context("out model_forward"):
