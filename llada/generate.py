@@ -23,7 +23,7 @@ from transformers import AutoTokenizer, AutoModel
 from model.modeling_llada import LLaDAModelLM
 
 from torch.cuda import nvtx
-from profiler.profiler import prof
+# from profiler.profiler import prof
 
 # @torch.compile()
 def get_first_mask_idx(mask_blk: torch.Tensor) -> torch.Tensor:
@@ -459,8 +459,8 @@ def generate_i_cache(model, prompt, steps=128, gen_length=128, block_length=128,
             # cur_idx = cur_idx[:, 1].view(B, -1)[:, 0] if cur_idx.shape[0] > 0 else cur_mask_blk.shape[1]
             # with prof.time_context("update_block_ptr"):
 
-            with open('actual_block_length_limit1.5.txt', 'a') as f:
-                f.write(f'actual_block_length: {e - s}\n')
+            # with open('actual_block_length_limit1.5.txt', 'a') as f:
+            #     f.write(f'actual_block_length: {e - s}\n')
 
             cur_mask_blk = (x[:, s: e] == mask_id)
             has_mask = cur_mask_blk.any(dim=1)
@@ -1441,7 +1441,7 @@ def get_transfer_index(
         # (No top-k; purely threshold-based)
         transfer_index = mask_index & (confidence >= threshold)
 
-        if transfer_index.sum() > max_transfer_tokens:
+        if max_transfer_tokens is not None and transfer_index.sum() > max_transfer_tokens:
                 # get top max_accept tokens
             _, indices = torch.topk(confidence, k=max_transfer_tokens, largest=True)
             transfer_index = torch.zeros_like(confidence, dtype=torch.bool)

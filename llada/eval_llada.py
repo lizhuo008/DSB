@@ -37,7 +37,7 @@ from generate import generate, generate_with_prefix_cache, generate_with_dual_ca
 from model.modeling_llada import LLaDAModelLM
 import json
 import time
-from profiler.profiler import prof
+# from profiler.profiler import prof
 def set_seed(seed):
     torch.manual_seed(seed)
     random.seed(seed)
@@ -70,6 +70,7 @@ class LLaDAEvalHarness(LM):
         dual_cache=False,
         sb=False,
         ib=False,
+        outp_path=None,
         **kwargs,
     ):
         '''
@@ -137,6 +138,7 @@ class LLaDAEvalHarness(LM):
         self.dual_cache = dual_cache
         self.sb = sb
         self.ib = ib
+        self.outp_path = outp_path
     @property
     def rank(self):
         return self._rank
@@ -407,8 +409,28 @@ class LLaDAEvalHarness(LM):
             print(f"Total time taken: {end_time - start_time} seconds")
             print(f"Tokens per second: {num_tokens / (end_time - start_time)}")
             print(f"Total NFE is {num_nfe}")
+            print(f"Tokens per NFE is {num_tokens / num_nfe}")
+            print(f"Average NFE is {num_nfe / len(output)}")
 
-        prof.print_all_events()
+
+            dirpath = os.path.dirname(self.outp_path)
+            if dirpath:
+                os.makedirs(dirpath, exist_ok=True)
+
+            with open(self.outp_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(
+                    {
+                        'Total Number of Tokens': num_tokens.item(),
+                        'Total Time Taken': end_time - start_time,
+                        'Tokens per Second': num_tokens.item() / (end_time - start_time),
+                        'Total NFE': num_nfe,
+                        'Tokens per NFE': num_tokens.item() / num_nfe,
+                        'Average NFE': num_nfe / len(output),
+                    },
+                    ensure_ascii=False
+                ) + "\n")
+
+        # prof.print_all_events()
             
         return output
 
