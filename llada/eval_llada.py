@@ -71,6 +71,8 @@ class LLaDAEvalHarness(LM):
         sb=False,
         ib=False,
         outp_path=None,
+        pwl=24,
+        swl=0,
         **kwargs,
     ):
         '''
@@ -139,6 +141,8 @@ class LLaDAEvalHarness(LM):
         self.sb = sb
         self.ib = ib
         self.outp_path = outp_path
+        self.pwl = pwl
+        self.swl = swl
     @property
     def rank(self):
         return self._rank
@@ -349,7 +353,7 @@ class LLaDAEvalHarness(LM):
                                         temperature=0, remasking=self.remasking, mask_id=self.mask_id, threshold=self.threshold, factor=self.factor)
                 elif self.ib:
                     generated_answer, nfe = generate_i_cache(self.model, input_ids, steps=self.steps, gen_length=self.gen_length, block_length=self.block_length, 
-                                        temperature=0, remasking=self.remasking, mask_id=self.mask_id, threshold=self.threshold, factor=self.factor)
+                                        temperature=0, remasking=self.remasking, mask_id=self.mask_id, threshold=self.threshold, factor=self.factor, prefix_window=self.pwl, suffix_window=self.swl)
                 elif self.sb:
                     generated_answer, nfe = generate_s_cache(self.model, input_ids, steps=self.steps, gen_length=self.gen_length, block_length=self.block_length, 
                                         temperature=0, remasking=self.remasking, mask_id=self.mask_id, threshold=self.threshold, factor=self.factor)
@@ -412,23 +416,23 @@ class LLaDAEvalHarness(LM):
             print(f"Tokens per NFE is {num_tokens / num_nfe}")
             print(f"Average NFE is {num_nfe / len(output)}")
 
+            if self.outp_path is not None:
+                dirpath = os.path.dirname(self.outp_path)
+                if dirpath:
+                    os.makedirs(dirpath, exist_ok=True)
 
-            dirpath = os.path.dirname(self.outp_path)
-            if dirpath:
-                os.makedirs(dirpath, exist_ok=True)
-
-            with open(self.outp_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(
-                    {
-                        'Total Number of Tokens': num_tokens.item(),
-                        'Total Time Taken': end_time - start_time,
-                        'Tokens per Second': num_tokens.item() / (end_time - start_time),
-                        'Total NFE': num_nfe,
-                        'Tokens per NFE': num_tokens.item() / num_nfe,
-                        'Average NFE': num_nfe / len(output),
-                    },
-                    ensure_ascii=False
-                ) + "\n")
+                with open(self.outp_path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(
+                        {
+                            'Total Number of Tokens': num_tokens.item(),
+                            'Total Time Taken': end_time - start_time,
+                            'Tokens per Second': num_tokens.item() / (end_time - start_time),
+                            'Total NFE': num_nfe,
+                            'Tokens per NFE': num_tokens.item() / num_nfe,
+                            'Average NFE': num_nfe / len(output),
+                        },
+                        ensure_ascii=False
+                    ) + "\n")
 
         # prof.print_all_events()
             

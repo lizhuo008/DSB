@@ -381,7 +381,7 @@ def generate_s_cache(model, prompt, steps=128, gen_length=128, block_length=128,
 
 @ torch.no_grad()
 def generate_i_cache(model, prompt, steps=128, gen_length=128, block_length=128, temperature=0.,
-             remasking='low_confidence', mask_id=126336, threshold=None, factor=None, prefix_window=8, suffix_window=0):
+             remasking='low_confidence', mask_id=126336, threshold=None, factor=None, prefix_window=24, suffix_window=0):
     '''
     Args:
         model: Mask predictor.
@@ -394,7 +394,7 @@ def generate_i_cache(model, prompt, steps=128, gen_length=128, block_length=128,
         remasking: Remasking strategy. 'low_confidence' or 'random'.
         mask_id: The toke id of [MASK] is 126336.
     '''
-    twl = suffix_window if suffix_window > 0 else 0
+    swl = suffix_window if suffix_window > 0 else 0
     pwl = prefix_window if prefix_window > 0 else 0
 
     x = torch.full((prompt.shape[0], prompt.shape[1] + gen_length), mask_id, dtype=torch.long).to(model.device)
@@ -403,9 +403,6 @@ def generate_i_cache(model, prompt, steps=128, gen_length=128, block_length=128,
     B, L = x.shape
 
     nfe = 0
-    # block_mask could act like the replace_position in the dual_cache
-    # block_mask = torch.zeros_like(x, dtype=torch.bool)
-    # block_mask[:, prompt.shape[1]: prompt.shape[1] + block_length + tbl] = True
 
     s = prompt.shape[1]
     e = s + block_length
@@ -449,10 +446,6 @@ def generate_i_cache(model, prompt, steps=128, gen_length=128, block_length=128,
         blk_acc += num_acc
         num_unmask += num_acc
         
-        twl = max(min(gen_length - num_unmask - block_length, twl), 0)
-        # print(f'first step: num_unmask: {num_unmask}, blk_acc: {blk_acc}, tbl: {tbl}')
-        # assert num_acc.item() > 0, f'num_acc: {num_acc.item()}, cur_transfer_index.sum: {cur_transfer_index.sum().item()}'
-
         while True:
             # cur_mask_blk = (x[:, block_start_ptr: block_end_ptr] == mask_id)
             # cur_idx = (cur_mask_blk).nonzero(as_tuple=False)
@@ -469,6 +462,7 @@ def generate_i_cache(model, prompt, steps=128, gen_length=128, block_length=128,
             # print(f's: {s}, e: {e}, prompt.shape[1]: {prompt.shape[1]}, block_length: {block_length}, num_unmask: {num_unmask}, L: {L}')
             # e = min(prompt.shape[1] + block_length + num_unmask, min(s + int(2*block_length), L))
             e = min(prompt.shape[1] + block_length + num_unmask, L)
+            swl = min(L - e, swl)
                 
             if blk_acc >= block_length or num_unmask == gen_length:
                 break
@@ -477,12 +471,12 @@ def generate_i_cache(model, prompt, steps=128, gen_length=128, block_length=128,
             prefix_window = max(cur_idx, pwl)
             # prefix_window = cur_idx + pwl
 
-            input_x = x[:, s - prefix_window: e + twl]
+            input_x = x[:, s - prefix_window: e + swl]
             # new_replace_position = torch.zeros_like(x, dtype=torch.bool)
             # new_replace_position[:, block_start_ptr - prefix_window: block_end_ptr + twl] = True
             # replace_position = new_replace_position
             replace_position.zero_()
-            replace_position[:, s - prefix_window: e + twl] = True
+            replace_position[:, s - prefix_window: e + swl] = True
 
             # with prof.time_context("model_forward"):
             out_blk = model(input_x, past_key_values=past_key_values, use_cache=True, replace_position=replace_position)
@@ -491,7 +485,7 @@ def generate_i_cache(model, prompt, steps=128, gen_length=128, block_length=128,
             past_key_values = out_blk.past_key_values
             mask_blk = (input_x == mask_id)
             # print(f'mask_blk.shape: {mask_blk.shape}')
-            if twl > 0:
+            if swl > 0:
                 mask_blk[:, e:] = 0
 
             # with prof.time_context("get_transfer_index"):
@@ -509,11 +503,10 @@ def generate_i_cache(model, prompt, steps=128, gen_length=128, block_length=128,
             
             blk_old = input_x
             blk_new = torch.where(cur_transfer_index, x0_blk, blk_old)
-            x = torch.cat([x[:, :s - prefix_window], blk_new, x[:, e + twl:]], dim=1)
+            x = torch.cat([x[:, :s - prefix_window], blk_new, x[:, e + swl:]], dim=1)
 
             blk_acc += num_acc
             num_unmask += num_acc
-            twl = max(min(gen_length - num_unmask - block_length, twl), 0)
 
     print(f'nfe: {nfe}')
     return x, nfe
