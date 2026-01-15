@@ -36,7 +36,7 @@ from lm_eval.api.model import LM
 from lm_eval.api.registry import register_model
 from lm_eval.models.utils import get_dtype
 from lm_eval.__main__ import cli_evaluate
-from model.generation_utils_block import DreamGenerationMixin
+from model.generation_utils import DreamGenerationMixin
 import types
 from model.configuration_dream import DreamConfig
 from model.modeling_dream import DreamModel
@@ -82,7 +82,7 @@ class Dream(LM):
         show_speed: Optional[bool] = False,
         outp_path: Optional[str] = None,
         dsb: Optional[bool] = False,
-        prefix_window: Optional[int] = 8,
+        prefix_window: Optional[int] = 0,
         **kwargs,
     ) -> None:
         super().__init__()

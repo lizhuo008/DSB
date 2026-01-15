@@ -12,3 +12,5 @@ llada/profiler/
 *.txt
 *.pdf
 *.ipynb
+llada/eval_2.sh
+llada/eval_3.sh
