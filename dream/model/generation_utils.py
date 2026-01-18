@@ -613,10 +613,10 @@ class DreamGenerationMixin:
         #     left_tokens_last_step = 0
 
         for num_block in range(num_blocks):
-            if alg == 'confidence_threshold':
-                block_mask_index = (x[:, input_ids.shape[1] + num_block * block_length: input_ids.shape[1] + (num_block + 1) * block_length] == mask_token_id)
-                number_transfer_tokens = block_mask_index.sum().item() // steps_per_block
-                left_tokens_last_step = 0
+            # if alg == 'confidence_threshold':
+            #     block_mask_index = (x[:, input_ids.shape[1] + num_block * block_length: input_ids.shape[1] + (num_block + 1) * block_length] == mask_token_id)
+            #     number_transfer_tokens = block_mask_index.sum().item() // steps_per_block
+            #     left_tokens_last_step = 0
             i = 0
             while True:
                 mask_index = (x == mask_token_id)
@@ -647,22 +647,17 @@ class DreamGenerationMixin:
                     x_[mask_index] = x0.clone()
                     full_confidence = torch.full_like(x, -torch.inf, device=self.device, dtype=logits.dtype)
                     full_confidence[mask_index] = confidence
-                    current_transfer_tokens = number_transfer_tokens + left_tokens_last_step
-                    left_tokens_last_step = 0
+                    current_transfer_tokens = mask_index.sum()
                     selected_confidence, select_index = torch.topk(full_confidence, current_transfer_tokens)
                     transfer_index = torch.zeros_like(x, device=x.device, dtype=torch.bool)
                     select_index = select_index.to(x.device)
                     transfer_index[0, select_index[0]] = True
                     for k in range(1, current_transfer_tokens):
                         if selected_confidence[0, k] < threshold:
-                            if i < steps_per_block - 1:
-                                left_tokens_last_step += 1
-                                transfer_index[0, select_index[0, k]] = False
-                            else:
-                                number_transfer_tokens = 0
-                                steps_per_block += 1
-                                left_tokens_last_step += 1
-                                transfer_index[0, select_index[0, k]] = False
+                            transfer_index[0, select_index[0, k]] = False
+                    if transfer_index.sum() == 0:
+                        _, force_index = torch.topk(full_confidence, 1)
+                        transfer_index[0, force_index[0]] = True
 
                     x[transfer_index] = x_[transfer_index].clone()
                 else:
@@ -813,6 +808,9 @@ class DreamGenerationMixin:
                 for k in range(1, current_transfer_tokens):
                     if selected_confidence[0, k] < threshold:
                         transfer_index[0, select_index[0, k]] = False
+                if transfer_index.sum() == 0:
+                    _, force_index = torch.topk(full_confidence, 1)
+                    transfer_index[0, force_index[0]] = True
 
                 x[transfer_index] = x_[transfer_index].clone()
             else:
@@ -1003,6 +1001,11 @@ class DreamGenerationMixin:
                     for k in range(1, current_transfer_tokens):
                         if selected_confidence[0, k] < threshold:
                             transfer_index[0, select_index[0, k]] = False
+                    
+                    if transfer_index.sum() == 0:
+                        _, force_index = torch.topk(full_confidence, 1)
+                        transfer_index[0, force_index[0]] = True
+
                     if dual_cache:
                         x[:, current_block_start:current_block_end][transfer_index] = x_[transfer_index]
                     else:
@@ -1142,7 +1145,7 @@ class DreamGenerationMixin:
                 if blk_acc >= block_length or num_unmask == gen_length:
                     break
 
-                prefix_window = max(cur_idx, pwl)
+                prefix_window = min(max(cur_idx, pwl), s)
                 replace_position.zero_()
                 replace_position[:, s - prefix_window: e] = True
 
@@ -1183,6 +1186,9 @@ class DreamGenerationMixin:
                     for k in range(1, current_transfer_tokens):
                         if selected_confidence[0, k] < threshold:
                             transfer_index[0, select_index[0, k]] = False
+                    if transfer_index.sum() == 0:
+                        _, force_index = torch.topk(full_confidence, 1)
+                        transfer_index[0, force_index[0]] = True
 
                     x[:, s-prefix_window:e][transfer_index] = x_[transfer_index]
                 else:

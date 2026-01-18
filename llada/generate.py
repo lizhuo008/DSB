@@ -476,7 +476,8 @@ def generate_i_cache(model, prompt, steps=128, gen_length=128, block_length=128,
                 break
 
             # with prof.time_context("update_replace_position"):
-            prefix_window = max(cur_idx, pwl)
+            prefix_window = min(max(cur_idx, pwl), s)
+            
             # prefix_window = cur_idx + pwl
 
             input_x = x[:, s - prefix_window: e + swl]
