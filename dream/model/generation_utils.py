@@ -357,6 +357,7 @@ class DreamGenerationMixin:
         threshold = kwargs.get("threshold", 0.9)
         block_length = kwargs.get("block_length", 32)
         dsb = kwargs.get("dsb", False)
+        max_block_length = kwargs.get("max_block_length", -1)
         use_cache = kwargs.get("use_cache", False)
 
         if dsb:
@@ -368,7 +369,8 @@ class DreamGenerationMixin:
                     generation_config=generation_config,
                     threshold=threshold,
                     block_length=block_length,
-                    prefix_window=prefix_window
+                    prefix_window=prefix_window,
+                    max_block_length=max_block_length
                 )
             else:
                 result, nfe = self._sample_dsb(
@@ -378,7 +380,8 @@ class DreamGenerationMixin:
                     generation_tokens_hook_func=generation_tokens_hook_func,
                     generation_logits_hook_func=generation_logits_hook_func,
                     threshold=threshold,
-                    block_length=block_length
+                    block_length=block_length,
+                    max_block_length=max_block_length
                 )
         else:
             if use_cache:
@@ -714,6 +717,7 @@ class DreamGenerationMixin:
         generation_logits_hook_func,
         threshold: Optional[float] = 0.9,
         block_length: Optional[int] = 32,
+        max_block_length: Optional[int] = -1,
     ) -> Union[DreamModelOutput, torch.LongTensor]:
         # init values
         output_history = generation_config.output_history
@@ -761,15 +765,20 @@ class DreamGenerationMixin:
         #     number_transfer_tokens = mask_index.sum().item() // steps
         #     left_tokens_last_step = 0
 
-        e = input_ids.shape[1] + block_length
-        if alg == 'confidence_threshold':
-            number_transfer_tokens = block_length
-            left_tokens_last_step = 0
+        sta = input_ids.shape[1]
+        e = sta + block_length
+        num_unmask = 0
+        
         i = 0
         while True:
             mask_index = (x == mask_token_id)
             if mask_index.sum() == 0:
                 break
+            has_mask = mask_index[:, :e].any(dim=1)
+            cur_idx = mask_index[:, :e].to(torch.long).argmax(dim=1).item() if has_mask else e
+            sta = cur_idx
+            e = min(input_ids.shape[1] + block_length + num_unmask, max_length if max_block_length == -1 else (sta + max_block_length))
+            
             mask_index[:, e:] = 0
             
             logits = self(x, attention_mask, tok_idx).logits
@@ -796,22 +805,14 @@ class DreamGenerationMixin:
                 x_[mask_index] = x0.clone()
                 full_confidence = torch.full_like(x, -torch.inf, device=self.device, dtype=logits.dtype)
                 full_confidence[mask_index] = confidence
-                current_transfer_tokens = number_transfer_tokens + left_tokens_last_step
-                left_tokens_last_step = 0
+                current_transfer_tokens = mask_index.sum()
                 selected_confidence, select_index = torch.topk(full_confidence, current_transfer_tokens)
                 transfer_index = torch.zeros_like(x, device=x.device, dtype=torch.bool)
                 select_index = select_index.to(x.device)
                 transfer_index[0, select_index[0]] = True
                 for k in range(1, current_transfer_tokens):
                     if selected_confidence[0, k] < threshold:
-                        if i < steps - 1:
-                            left_tokens_last_step += 1
-                            transfer_index[0, select_index[0, k]] = False
-                        else:
-                            number_transfer_tokens = 0
-                            steps += 1
-                            left_tokens_last_step += 1
-                            transfer_index[0, select_index[0, k]] = False
+                        transfer_index[0, select_index[0, k]] = False
 
                 x[transfer_index] = x_[transfer_index].clone()
             else:
@@ -842,12 +843,11 @@ class DreamGenerationMixin:
             # this allows user-defined token control of the intermediate steps
             x = generation_tokens_hook_func(i, x, logits)
 
-            if e < max_length:
-                if alg == 'origin':
-                    extend_len = transfer_index_t_s.sum(dim=-1, keepdim=True).item()
-                else:
-                    extend_len = transfer_index.sum(dim=-1, keepdim=True).item()
-                e = e + extend_len
+            if alg == 'origin':
+                extend_len = transfer_index_t_s.sum(dim=-1, keepdim=True).item()
+            else:
+                extend_len = transfer_index.sum(dim=-1, keepdim=True).item()
+            num_unmask += extend_len
 
             if histories is not None:
                 histories.append(x.clone())
@@ -1064,6 +1064,7 @@ class DreamGenerationMixin:
         threshold: Optional[float] = 0.9,
         block_length: Optional[int] = 32,
         prefix_window: Optional[int] = 0,
+        max_block_length: Optional[int] = -1,
     ) -> Union[DreamModelOutput, torch.LongTensor]:
         # init values
         
@@ -1136,7 +1137,7 @@ class DreamGenerationMixin:
                 has_mask = prev_mask_index.any(dim=1)
                 cur_idx = prev_mask_index.to(torch.long).argmax(dim=1).item() if has_mask else prev_mask_index.shape[1]
                 s = s + cur_idx 
-                e = min(input_ids.shape[1] + block_length + num_unmask, max_length)
+                e = min(input_ids.shape[1] + block_length + num_unmask, max_length if max_block_length == -1 else (s + max_block_length))
                 
                 if blk_acc >= block_length or num_unmask == gen_length:
                     break

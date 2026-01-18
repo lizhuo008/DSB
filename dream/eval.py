@@ -83,6 +83,7 @@ class Dream(LM):
         outp_path: Optional[str] = None,
         dsb: Optional[bool] = False,
         prefix_window: Optional[int] = 0,
+        max_block_length: Optional[int] = -1,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -221,6 +222,7 @@ class Dream(LM):
         self.outp_path = outp_path
         self.dsb = dsb
         self.prefix_window = prefix_window
+        self.max_block_length = max_block_length
     @property
     def batch_size(self):
         return self.batch_size_per_gpu
@@ -315,6 +317,9 @@ class Dream(LM):
         prompt_ids = prompt_ids.to(device=self.device)
         attn_mask = attn_mask.to(device=self.device)
 
+        torch.cuda.synchronize()
+        start_time_batch = time.time()
+
         generation_ids, nfe = self.model.diffusion_generate(
             prompt_ids,
             attention_mask=attn_mask,
@@ -333,8 +338,10 @@ class Dream(LM):
             dsb=self.dsb,
             use_cache=self.use_cache,
             prefix_window=self.prefix_window,
+            max_block_length=self.max_block_length,
         )
-
+        torch.cuda.synchronize()
+        batch_time = time.time() - start_time_batch
         # decode
         self.generated_token_num += (generation_ids.sequences[0][prompt_ids.shape[1] :] != self.tokenizer.eos_token_id).sum().item()
         print(f"generated_token_num: {self.generated_token_num}")
@@ -346,7 +353,7 @@ class Dream(LM):
         print('question: ', prompts[0])
         print('answer: ', responses[0])
         print('=' * 20, end='\n\n')
-        return responses, nfe
+        return responses, nfe, batch_time
 
     def generate_until(self, requests: List[Instance], disable_tqdm: bool = False):
         res = []
@@ -381,6 +388,7 @@ class Dream(LM):
             desc="Running generate_until requests",
         )
         total_nfe = 0
+        forward_time = 0
         start_time = time.time()
         for batch_idx in range(0, len(requests), self.batch_size):
             batch_requests = requests[batch_idx : batch_idx + self.batch_size]
@@ -390,8 +398,9 @@ class Dream(LM):
                 pbar.update(len(contexts))
                 continue
             
-            responses, nfe = self._generate_batch(contexts)
+            responses, nfe, batch_time = self._generate_batch(contexts)
             total_nfe += nfe
+            forward_time += batch_time
             if not self.escape_until:
                 for i, r in enumerate(responses):
                     for s in gen_args[0]['until']:
@@ -412,7 +421,8 @@ class Dream(LM):
 
         end_time = time.time()
         if self.show_speed:
-            print(f"Time taken: {end_time - start_time} seconds")
+            print(f"e2e Time taken: {end_time - start_time} seconds")
+            print(f"forward Time taken: {forward_time} seconds")
             print(f"Generated token num: {self.generated_token_num}")
             print(f"Generated token num per second: {self.generated_token_num / (end_time - start_time)}")
             print(f"Total NFE: {total_nfe}")
@@ -427,7 +437,8 @@ class Dream(LM):
                     f.write(json.dumps(
                         {
                             'Total Number of Tokens': self.generated_token_num,
-                            'Total Time Taken': end_time - start_time,
+                            'e2e Total Time Taken': end_time - start_time,
+                            'Forward Time Taken': forward_time,
                             'Tokens per Second': self.generated_token_num / (end_time - start_time),
                             'Total NFE': total_nfe,
                             'Tokens per NFE': self.generated_token_num / total_nfe,

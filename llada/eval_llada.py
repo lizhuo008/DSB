@@ -73,6 +73,7 @@ class LLaDAEvalHarness(LM):
         outp_path=None,
         pwl=24,
         swl=0,
+        max_block_length=-1,
         **kwargs,
     ):
         '''
@@ -143,6 +144,8 @@ class LLaDAEvalHarness(LM):
         self.outp_path = outp_path
         self.pwl = pwl
         self.swl = swl
+        self.max_block_length = max_block_length
+        self.cfg = 0
     @property
     def rank(self):
         return self._rank
@@ -289,6 +292,7 @@ class LLaDAEvalHarness(LM):
         output = []
         num_tokens = 0
         num_nfe = 0
+        forward_time = 0
         processed_count = 0
         if self.save_dir is not None:
             os.makedirs(self.save_dir, exist_ok=True)
@@ -319,6 +323,8 @@ class LLaDAEvalHarness(LM):
             batched_input_ids = []
             max_len = 0
             pad_len = []
+            
+            
             for req in batch:
                 question = req.args[0]
                 if self.is_instruct:
@@ -347,13 +353,17 @@ class LLaDAEvalHarness(LM):
 
             stop_tokens = req.args[1]['until']
             input_ids = batched_input_ids
+
+            torch.cuda.synchronize()
+            start_time_forward = time.time()
+
             if self.use_cache:
                 if self.dual_cache:
                     generated_answer, nfe = generate_with_dual_cache(self.model, input_ids, steps=self.steps, gen_length=self.gen_length, block_length=self.block_length, 
                                         temperature=0, remasking=self.remasking, mask_id=self.mask_id, threshold=self.threshold, factor=self.factor)
                 elif self.ib:
                     generated_answer, nfe = generate_i_cache(self.model, input_ids, steps=self.steps, gen_length=self.gen_length, block_length=self.block_length, 
-                                        temperature=0, remasking=self.remasking, mask_id=self.mask_id, threshold=self.threshold, factor=self.factor, prefix_window=self.pwl, suffix_window=self.swl)
+                                        temperature=0, remasking=self.remasking, mask_id=self.mask_id, threshold=self.threshold, factor=self.factor, prefix_window=self.pwl, suffix_window=self.swl, max_block_length=self.max_block_length)
                 elif self.sb:
                     generated_answer, nfe = generate_s_cache(self.model, input_ids, steps=self.steps, gen_length=self.gen_length, block_length=self.block_length, 
                                         temperature=0, remasking=self.remasking, mask_id=self.mask_id, threshold=self.threshold, factor=self.factor)
@@ -365,10 +375,13 @@ class LLaDAEvalHarness(LM):
                                         temperature=0, remasking=self.remasking, mask_id=self.mask_id, threshold=self.threshold, factor=self.factor)
             elif self.ib:
                 generated_answer, nfe = generate_i(self.model, input_ids, steps=self.steps, gen_length=self.gen_length, block_length=self.block_length, 
-                                        temperature=0, remasking=self.remasking, mask_id=self.mask_id, threshold=self.threshold, factor=self.factor)
+                                        temperature=0, remasking=self.remasking, mask_id=self.mask_id, threshold=self.threshold, factor=self.factor, max_block_length=self.max_block_length)
             else:
                 generated_answer, nfe = generate(self.model, input_ids, steps=self.steps, gen_length=self.gen_length, block_length=self.block_length, 
                                         temperature=0, remasking=self.remasking, mask_id=self.mask_id, threshold=self.threshold, factor=self.factor)
+
+            torch.cuda.synchronize()
+            forward_time += time.time() - start_time_forward
 
             if self.is_instruct and 'task_id' in req.doc and str(req.doc['task_id']).lower().startswith('humaneval'):
                 generated_answer_ids = generated_answer[:, input_ids.shape[1]:]
@@ -410,7 +423,8 @@ class LLaDAEvalHarness(LM):
         end_time = time.time()
         if self.show_speed:
             print(f"Total number of tokens generated: {num_tokens}")
-            print(f"Total time taken: {end_time - start_time} seconds")
+            print(f"e2e Total time taken: {end_time - start_time} seconds")
+            print(f"forward Total time taken: {forward_time} seconds")
             print(f"Tokens per second: {num_tokens / (end_time - start_time)}")
             print(f"Total NFE is {num_nfe}")
             print(f"Tokens per NFE is {num_tokens / num_nfe}")
@@ -425,7 +439,8 @@ class LLaDAEvalHarness(LM):
                     f.write(json.dumps(
                         {
                             'Total Number of Tokens': num_tokens.item(),
-                            'Total Time Taken': end_time - start_time,
+                            'e2e Total Time Taken': end_time - start_time,
+                            'Forward Time Taken': forward_time,
                             'Tokens per Second': num_tokens.item() / (end_time - start_time),
                             'Total NFE': num_nfe,
                             'Tokens per NFE': num_tokens.item() / num_nfe,

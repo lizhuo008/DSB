@@ -184,7 +184,7 @@ def generate_s(model, prompt, steps=128, gen_length=128, block_length=128, tempe
 
 @ torch.no_grad()
 def generate_i(model, prompt, steps=128, gen_length=128, block_length=128, temperature=0.,
-             remasking='low_confidence', mask_id=126336, threshold=None, factor=None):
+             remasking='low_confidence', mask_id=126336, threshold=None, factor=None, max_block_length=-1):
     '''
     Args:
         model: Mask predictor.
@@ -201,15 +201,22 @@ def generate_i(model, prompt, steps=128, gen_length=128, block_length=128, tempe
     x[:, :prompt.shape[1]] = prompt.clone()
 
     nfe = 0
-    block_end_ptr = torch.full((x.shape[0], 1), prompt.shape[1] + block_length, dtype=torch.long, device=x.device)
+    # block_end_ptr = torch.full((x.shape[0], 1), prompt.shape[1] + block_length, dtype=torch.long, device=x.device)
+    s = prompt.shape[1]
+    e = s + block_length
     num_transfer_tokens = get_num_transfer_tokens(x == mask_id, steps).to(torch.long)  # (B, steps)
     # print(f'num_transfer_tokens: {num_transfer_tokens}')
+    num_unmask = 0
     i = 0
     while True:
         nfe += 1
         mask_index = (x == mask_id)
+        has_mask = mask_index[:, :e].any(dim=1)
+        cur_idx = mask_index[:, :e].to(torch.long).argmax(dim=1).item() if has_mask else e
+        s = cur_idx
+        e = min(prompt.shape[1] + block_length + num_unmask, x.shape[1] if max_block_length == -1 else (s + max_block_length))
         logits = model(x).logits
-        mask_index[:, block_end_ptr:] = 0 # not consider low conf tokens yet
+        mask_index[:, e:] = 0 # not consider low conf tokens yet
         if factor is None:
             x0, transfer_index, _ = get_transfer_index(logits, temperature, remasking, mask_index, x, num_transfer_tokens[:, i] if threshold is None else None, threshold)
         else:
@@ -217,9 +224,10 @@ def generate_i(model, prompt, steps=128, gen_length=128, block_length=128, tempe
         x[transfer_index] = x0[transfer_index]
         i += 1
 
-        if block_end_ptr.min().item() < x.shape[1]:
-            extend_len = transfer_index.sum(dim=-1, keepdim=True)
-            block_end_ptr = torch.clamp(block_end_ptr + extend_len, max=x.shape[1])
+        # if block_end_ptr.min().item() < x.shape[1]:
+        num_acc = transfer_index.sum(dim=-1, keepdim=True)
+        num_unmask += num_acc.item()
+        
 
         if (x[:, prompt.shape[1]:] == mask_id).sum() == 0:
             break
@@ -381,7 +389,7 @@ def generate_s_cache(model, prompt, steps=128, gen_length=128, block_length=128,
 
 @ torch.no_grad()
 def generate_i_cache(model, prompt, steps=128, gen_length=128, block_length=128, temperature=0.,
-             remasking='low_confidence', mask_id=126336, threshold=None, factor=None, prefix_window=24, suffix_window=0):
+             remasking='low_confidence', mask_id=126336, threshold=None, factor=None, prefix_window=24, suffix_window=0, max_block_length=-1):
     '''
     Args:
         model: Mask predictor.
@@ -461,7 +469,7 @@ def generate_i_cache(model, prompt, steps=128, gen_length=128, block_length=128,
             s = s + cur_idx 
             # print(f's: {s}, e: {e}, prompt.shape[1]: {prompt.shape[1]}, block_length: {block_length}, num_unmask: {num_unmask}, L: {L}')
             # e = min(prompt.shape[1] + block_length + num_unmask, min(s + int(2*block_length), L))
-            e = min(prompt.shape[1] + block_length + num_unmask, L)
+            e = min(prompt.shape[1] + block_length + num_unmask, L if max_block_length == -1 else (s + max_block_length))
             swl = min(L - e, swl)
                 
             if blk_acc >= block_length or num_unmask == gen_length:
