@@ -13,7 +13,6 @@ num_fewshot=3
 steps=$((length / block_length))
 
 for task in \
-  bbh_cot_fewshot \
   bbh_cot_fewshot_boolean_expressions \
   bbh_cot_fewshot_causal_judgement \
   bbh_cot_fewshot_date_understanding \
