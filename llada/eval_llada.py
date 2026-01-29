@@ -33,7 +33,7 @@ from lm_eval.api.registry import register_model
 from tqdm import tqdm
 import os
 from transformers import AutoTokenizer, AutoModel, AutoConfig
-from generate import generate, generate_with_prefix_cache, generate_with_dual_cache, generate_s, generate_i, generate_i_cache, generate_s_cache
+from generate import generate, generate_with_prefix_cache, generate_with_dual_cache, generate_dsb, generate_dsb_cache
 from model.modeling_llada import LLaDAModelLM
 import json
 import time
@@ -68,8 +68,7 @@ class LLaDAEvalHarness(LM):
         save_dir=None,
         show_speed=False,
         dual_cache=False,
-        sb=False,
-        ib=False,
+        dsb=False,
         outp_path=None,
         pwl=24,
         swl=0,
@@ -139,8 +138,7 @@ class LLaDAEvalHarness(LM):
         self.save_dir = save_dir
         self.show_speed = show_speed
         self.dual_cache = dual_cache
-        self.sb = sb
-        self.ib = ib
+        self.dsb = dsb
         self.outp_path = outp_path
         self.pwl = pwl
         self.swl = swl
@@ -361,20 +359,14 @@ class LLaDAEvalHarness(LM):
                 if self.dual_cache:
                     generated_answer, nfe = generate_with_dual_cache(self.model, input_ids, steps=self.steps, gen_length=self.gen_length, block_length=self.block_length, 
                                         temperature=0, remasking=self.remasking, mask_id=self.mask_id, threshold=self.threshold, factor=self.factor)
-                elif self.ib:
-                    generated_answer, nfe = generate_i_cache(self.model, input_ids, steps=self.steps, gen_length=self.gen_length, block_length=self.block_length, 
+                elif self.dsb:
+                    generated_answer, nfe = generate_dsb_cache(self.model, input_ids, steps=self.steps, gen_length=self.gen_length, block_length=self.block_length, 
                                         temperature=0, remasking=self.remasking, mask_id=self.mask_id, threshold=self.threshold, factor=self.factor, prefix_window=self.pwl, suffix_window=self.swl, max_block_length=self.max_block_length)
-                elif self.sb:
-                    generated_answer, nfe = generate_s_cache(self.model, input_ids, steps=self.steps, gen_length=self.gen_length, block_length=self.block_length, 
-                                        temperature=0, remasking=self.remasking, mask_id=self.mask_id, threshold=self.threshold, factor=self.factor)
                 else:
                     generated_answer, nfe = generate_with_prefix_cache(self.model, input_ids, steps=self.steps, gen_length=self.gen_length, block_length=self.block_length, 
                                         temperature=0, remasking=self.remasking, mask_id=self.mask_id, threshold=self.threshold, factor=self.factor)
-            elif self.sb:
-                generated_answer, nfe = generate_s(self.model, input_ids, steps=self.steps, gen_length=self.gen_length, block_length=self.block_length, 
-                                        temperature=0, remasking=self.remasking, mask_id=self.mask_id, threshold=self.threshold, factor=self.factor)
-            elif self.ib:
-                generated_answer, nfe = generate_i(self.model, input_ids, steps=self.steps, gen_length=self.gen_length, block_length=self.block_length, 
+            elif self.dsb:
+                generated_answer, nfe = generate_dsb(self.model, input_ids, steps=self.steps, gen_length=self.gen_length, block_length=self.block_length, 
                                         temperature=0, remasking=self.remasking, mask_id=self.mask_id, threshold=self.threshold, factor=self.factor, max_block_length=self.max_block_length)
             else:
                 generated_answer, nfe = generate(self.model, input_ids, steps=self.steps, gen_length=self.gen_length, block_length=self.block_length, 
