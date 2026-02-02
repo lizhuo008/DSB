@@ -9,7 +9,6 @@ dream/evals_results*/
 **/.DS_Store
 env_check.sh
 llada/profiler/
-*.txt
 *.pdf
 *.ipynb
 llada/eval_2.sh
