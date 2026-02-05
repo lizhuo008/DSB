@@ -1,45 +1,57 @@
-# DSB: Dynamic Sliding Block Scheduling for Diffusion LLMs
+<div align="center">
 
-We propose Dynamic Sliding Block (DSB) and DSB Cache, a training-free block scheduling and KV-cache scheme for diffusion LLMs that improves both generation quality and inference efficiency.
+![logo](asset/logo.png)
+
+<h1>DSB: Dynamic Sliding Block Scheduling for Diffusion LLMs (Paper Coming Soon)</h1>
+
+</div>
+
+Dynamic Sliding Block (DSB) is a training-free block scheduling method. 
+
+DSB Cache is a training-free KV-cache scheme tailored to DSB for diffusion LLMs, further demonstrating the advantages of DSB.
+
+## 🚀 Features
+- A better semi-autoregressive paradigm.
+- DSB-tailored KV cache.
+- A training-free, plug-and-play method, improving quality-speed trade-off.
+- Fast inference support for Dream and LLaDA model. 
+- Full evaluation provided.
+
+## 🔍 Key Details
 
 ![overview](asset/overview.png)
 
-## Project Structure
+1. **Dynamic Sliding Block (DSB)** is a training-free decoding schedule for diffusion LLMs. Instead of using fixed blocks, it keeps an active block that slides forward and can change its size during inference. This lets the model decode easy/high-confidence tokens earlier (especially near block boundaries) and wait on low-confidence tokens until more context is available—improving the quality–speed trade-off.
 
-```
-.
-├── dream/          # Dream model related code
-├── llada/          # LLaDA model related code
-└── .gitignore      # Git ignore configuration
-```
 
-## Environment
-- Python 3.10.12
-- NVIDIA GPU + CUDA 12.1 compatible driver
+2. **DSB Cache** is a training-free KV-cache design built for DSB. Sliding blocks can make newly exposed boundary tokens have unstable (transient) KV states, which hurts caching. To fix this, DSB Cache refreshes a small prefix window before the active block together with the block at every step, while caching the rest. It also does periodic global refreshes to keep the cache consistent—boosting throughput with minimal quality drop.
 
-## Install
-
-1) Install PyTorch (CUDA 12.1 wheels):
-```bash
-pip install --index-url https://download.pytorch.org/whl/cu121 \
-  torch==2.5.1+cu121 torchvision==0.20.1+cu121 torchaudio==2.5.1+cu121
-```
-
-2) Install the rest:
+## 🔧 Installation
+### Option A: Quick start (recommended)
 ```bash
 pip install -r requirements.txt
 ```
 
-## Eval
+### Option B: Reproducible install
+```bash
+pip install -r requirements-lock.txt
+```
+
+## ✨Eval
 
 We provide the eval scripts for the main experiment, you can reproduce it directly. For example:
 ```bash
 cd llada
 bash eval_instruct.sh
 ```
-The main result:
+The main result is conducted on an Nvidia H200 140G GPU, we evaluate two variants of DSB: DSB(const.) and DSB (greedy), demonstrating the stable improvement of our method.
+
 ![main result](asset/main_result.png)
 
-## Acknowledgements
+## 🎓 Citation
+
+Coming Soon...
+
+## 🙏 Acknowledgements
 
 We would like to thank the authors of [LLaDA](https://github.com/llada-project/llada), [Dream](https://github.com/dream-project/dream) and [Fast-dLLM](https://github.com/NVlabs/Fast-dLLM) for their excellent work and open-source contributions.
