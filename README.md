@@ -2,7 +2,10 @@
 
 ![logo](asset/logo.png)
 
-<h1>DSB: Dynamic Sliding Block Scheduling for Diffusion LLMs (Paper Coming Soon)</h1>
+<h1>DSB: Dynamic Sliding Block Scheduling for Diffusion LLMs</h1>
+
+[![arXiv](https://img.shields.io/badge/Paper-arXiv-red.svg)](https://arxiv.org/abs/2602.05992)
+[![license](https://img.shields.io/badge/License-MIT%202.0-blue)](./LICENSE)
 
 </div>
 
@@ -50,8 +53,20 @@ The main result is conducted on an Nvidia H200 140G GPU, we evaluate two variant
 
 ## 🎓 Citation
 
-Coming Soon...
+Thank you for citing this work if it helps your research!
 
-## 🙏 Acknowledgements
+```bibtex
+@misc{dsb,
+      title={DSB: Dynamic Sliding Block Scheduling for Diffusion LLMs}, 
+      author={Lizhuo Luo and Shenggui Li and Yonggang Wen and Tianwei Zhang},
+      year={2026},
+      eprint={2602.05992},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2602.05992}, 
+}
+```
+
+## 🙏 Acknowledgement
 
 We would like to thank the authors of [LLaDA](https://github.com/llada-project/llada), [Dream](https://github.com/dream-project/dream) and [Fast-dLLM](https://github.com/NVlabs/Fast-dLLM) for their excellent work and open-source contributions.
